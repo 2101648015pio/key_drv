@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="GB2312" standalone="no"?>
+<SylixOSSetting>
+<BaseSetting BeLite="false" ProjectType="SylixOSAppProject" RealEvoVer="3.2.5 Experience"/>
+<OutputSetting>
+<OutputPath Name="Output" Path="Release:Debug" TreeNode="Output"/>
+<OutputPath Name="Debug" Path="Debug" TreeNode="Debug"/>
+<OutputPath Name="Release" Path="Release" TreeNode="Release"/>
+</OutputSetting>
+<UploadPath>
+<PairItem key="$(WORKSPACE_key_drv_test)\$(Output)\strip\key_drv_test" value="/apps/key_drv_test/key_drv_test"/>
+</UploadPath>
+<BuildSetting CoustomCfgMakefile="false" NotScanSourceFile="false"/>
+<DeviceSetting DevName="192.168.1.71" WorkDir="/apps/key_drv_test"/>
+</SylixOSSetting>
