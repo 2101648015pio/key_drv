@@ -10,11 +10,11 @@
  **
  **--------------文件信息--------------------------------------------------------------------------------
  **
- ** 文   件   名: key_drv_all2.c
+ ** 文   件   名: key_drv.c
  **
  ** 创   建   人: Liu.Jin (刘晋)
  **
- ** 文件创建日期: 2017 年 08 月 03 日
+ ** 文件创建日期: 2017 年 08 月 17 日
  **
  ** 描        述: KEY驱动模块
  *********************************************************************************************************/
@@ -71,9 +71,10 @@ static VOID  keyThread (PKEY_DEV  pkey)
             kmsg.KEY_stat = gpioGetValue(pkey->KEY_uiGpio[i]);
             if (kmsg.KEY_stat == 0) {
                 SEL_WAKE_UP_ALL(&pkey->KEY_selList, SELREAD);
+
+                API_MsgQueueSend(pkey->KEY_msgQueue,
+                                 &kmsg, sizeof(KEY_MSG));
             }
-            API_MsgQueueSend(pkey->KEY_msgQueue,
-                             &kmsg, sizeof(KEY_MSG));
         }
     }
 }
@@ -99,7 +100,7 @@ static irqreturn_t  keyIsr (PVOID  pvArg, ULONG  ulVector)
     for (i = 0; i < 7; i++) {
         if (API_GpioSvrIrq(pkey->KEY_uiGpio[i])) {
             kmsg.KEY_num  = i+1;
-            kmsg.KEY_stat = 0;
+            kmsg.KEY_stat = 1;
             API_GpioClearIrq(pkey->KEY_uiGpio[i]);
         }
     }
@@ -213,61 +214,6 @@ static ssize_t  keyRead (PLW_FD_ENTRY  pfdentry, PKEY_MSG  usrKeyMsg, ssize_t  s
     return  (ERROR_NONE);
 }
 /*********************************************************************************************************
- ** 函数名称: keyOpen
- ** 功能描述: KEY设备打开
- ** 输　入  : pkey        控制结构
- **           pcName      key 名称
- **           iFlags      标志
- **           iMode       模式
- ** 输　出  : ERROR_CODE
- ** 全局变量:
- ** 调用模块:
- *********************************************************************************************************/
-static LONG  keyOpen (PKEY_DEV  pkey, CHAR  *pcName, INT  iFlags,
-                      INT  iMode)
-{
-    PLW_FD_NODE         pfdnode;
-    BOOL                bIsNew;
-    INT                 i;
-
-    if (pcName == LW_NULL) {
-        _ErrorHandle(ERROR_IO_NO_DEVICE_NAME_IN_PATH);
-        printk("device is not find!\n");
-        return (PX_ERROR);
-    } else {
-        pfdnode = API_IosFdNodeAdd(&pkey->KEY_fdNodeHeader,
-                                   (dev_t)pkey, 0,iFlags,
-                                   iMode, 0, 0, 0, LW_NULL, &bIsNew);
-        if (pfdnode == LW_NULL) {
-            printk(KERN_ERR "keyOpen() failed to add fd node!\n");
-            return  (PX_ERROR);
-        }
-
-        if (LW_DEV_INC_USE_COUNT(&pkey->KEY_devhdr) == 1) {
-            for (i = 0; i < 7; i++) {
-                if (gpioRequestOne(pkey->KEY_uiGpio[i], LW_GPIOF_DIR_IN, "key")) {
-                    LW_DEV_DEC_USE_COUNT(&pkey->KEY_devhdr);
-                    API_IosFdNodeDec(&pkey->KEY_fdNodeHeader, pfdnode, NULL);
-                    printk("gpio request failed!\n");
-                    return  (PX_ERROR);
-                }
-            }
-
-            pkey->KEY_msgQueue = API_MsgQueueCreate("q_key",7,
-                                                 sizeof(KEY_MSG),
-                                                 LW_OPTION_WAIT_FIFO,
-                                                 LW_NULL);
-            if (pkey->KEY_msgQueue == LW_OBJECT_HANDLE_INVALID) {
-                __SHEAP_FREE(pkey);
-                return  (PX_ERROR);
-            }
-
-            SEL_WAKE_UP_LIST_INIT(&pkey->KEY_selList);
-        }
-        return  ((LONG) pfdnode);
-    }
-}
-/*********************************************************************************************************
  ** 函数名称: keyIntInit
  ** 功能描述: KEY 中断初始化
  ** 输　入  : pkey    控制结构
@@ -335,6 +281,65 @@ static INT  keyPollInit (PKEY_DEV  pkey)
         }
     }
     return  (ERROR_NONE);
+}
+/*********************************************************************************************************
+ ** 函数名称: keyOpen
+ ** 功能描述: KEY设备打开
+ ** 输　入  : pkey        控制结构
+ **           pcName      key 名称
+ **           iFlags      标志
+ **           iMode       模式
+ ** 输　出  : ERROR_CODE
+ ** 全局变量:
+ ** 调用模块:
+ *********************************************************************************************************/
+static LONG  keyOpen (PKEY_DEV pkey,
+                      CHAR    *pcName,
+                      INT      iFlags,
+                      INT      iMode)
+{
+    PLW_FD_NODE pfdnode;
+    BOOL        bIsNew;
+    INT         i;
+
+    if (pcName == LW_NULL) {
+        _ErrorHandle(ERROR_IO_NO_DEVICE_NAME_IN_PATH);
+        printk("device is not find!\n");
+        return (PX_ERROR);
+    } else {
+        pfdnode = API_IosFdNodeAdd(&pkey->KEY_fdNodeHeader,
+                                   (dev_t)pkey, 0,iFlags,
+                                   iMode, 0, 0, 0, LW_NULL, &bIsNew);
+        if (pfdnode == LW_NULL) {
+            printk(KERN_ERR "keyOpen() failed to add fd node!\n");
+            return  (PX_ERROR);
+        }
+
+        if (LW_DEV_INC_USE_COUNT(&pkey->KEY_devhdr) == 1) {
+            for (i = 0; i < 7; i++) {
+                if (gpioRequestOne(pkey->KEY_uiGpio[i], LW_GPIOF_DIR_IN, "key")) {
+                    LW_DEV_DEC_USE_COUNT(&pkey->KEY_devhdr);
+                    API_IosFdNodeDec(&pkey->KEY_fdNodeHeader, pfdnode, NULL);
+                    printk("gpio request failed!\n");
+                    return  (PX_ERROR);
+                }
+            }
+
+            pkey->KEY_msgQueue = API_MsgQueueCreate("q_key",7,
+                                                    sizeof(KEY_MSG),
+                                                    LW_OPTION_WAIT_FIFO,
+                                                    LW_NULL);
+            if (pkey->KEY_msgQueue == LW_OBJECT_HANDLE_INVALID) {
+                __SHEAP_FREE(pkey);
+                return  (PX_ERROR);
+            }
+
+            keyIntInit(pkey);
+
+            SEL_WAKE_UP_LIST_INIT(&pkey->KEY_selList);
+        }
+        return  ((LONG)pfdnode);
+    }
 }
 /*********************************************************************************************************
  ** 函数名称: keyIoctl
@@ -445,12 +450,12 @@ INT  keyDrv (VOID)
 
     lib_memset(&fileop, 0, sizeof(struct file_operations));
 
-    fileop.owner     = THIS_MODULE;
-    fileop.fo_open   = keyOpen;
-    fileop.fo_read   = keyRead;
-    fileop.fo_ioctl  = keyIoctl;
-    fileop.fo_lstat  = keyLstat;
-    fileop.fo_close  = keyClose;
+    fileop.owner    = THIS_MODULE;
+    fileop.fo_open  = keyOpen;
+    fileop.fo_read  = keyRead;
+    fileop.fo_ioctl = keyIoctl;
+    fileop.fo_lstat = keyLstat;
+    fileop.fo_close = keyClose;
 
     __G_iKeyDrvNum = iosDrvInstallEx2(&fileop, LW_DRV_TYPE_NEW_1);
 
@@ -464,7 +469,6 @@ INT  keyDrv (VOID)
  ** 函数名称: keyDevCreate
  ** 功能描述: 创建 KEY 设备
  ** 输　入  : cpcName         设备名
- **           uiGpio          GPIO 编号
  ** 输　出  : ERROR_CODE
  ** 全局变量:
  ** 调用模块:
